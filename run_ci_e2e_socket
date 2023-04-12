@@ -1,0 +1,4 @@
+#!/usr/bin/env ruby
+
+Dir.chdir "mobile/mock-server/socket"
+exec "yarn install && yarn start"

@@ -1,0 +1,118 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "socket"
+require "timeout"
+
+class RunStressTest
+  attr_accessor :pids
+  attr_accessor :test_files
+
+  def initialize(test_files)
+    self.pids = []
+    self.test_files = test_files
+  end
+
+  def run
+    if test_files.empty?
+      p %i[test_files empty]
+    else
+      begin
+        with_api_server do
+          tail_jmeter_log
+          evaluate_test_files
+        end
+
+        quit
+      end
+    end
+  end
+
+  def tail_jmeter_log
+    system "touch jmeter.log"
+    self.pids << fork { exec("tail -f jmeter.log") }
+  end
+
+  def evaluate_test_files
+    test_files.each do |test_file|
+      p [:EVALUATING, test_file]
+      load test_file
+    end
+  end
+
+  def api_server_started?
+    port_connectible?("127.0.0.1", 3100)
+  end
+
+  def start_api_server
+    ENV["STRESS_TESTING"] = "1"
+    self.pids << fork { exec("bundle exec rails s -b 127.0.0.1 -p 3100") }
+  end
+
+  def with_api_server
+    if api_server_started?
+      yield
+    else
+      start_api_server
+      puts "wait for rails\n"
+      Timeout.timeout(60) do
+        60.times do |i|
+          break if api_server_started?
+
+          print "\r#{i}"
+          sleep 1
+        end
+      end
+
+      if api_server_started?
+        yield
+      else
+        raise "cannot start api server"
+      end
+    end
+  end
+
+  def quit
+    p %i[run_stress_test quit]
+
+    pids.each do |pid|
+      Process.kill("TERM", pid)
+    rescue StandardError
+      nil
+    end
+    begin
+      Timeout.timeout(5) do
+        pids.each { |pid| Process.wait(pid) }
+      end
+    rescue StandardError
+    end
+
+    pids.each { |pid| Process.kill("KILL", pid) if pid_alive?(pid) }
+  end
+
+  def pid_alive?(pid)
+    Process.getpgid(pid)
+    true
+  rescue Errno::ESRCH
+    false
+  end
+
+  def port_connectible?(ip, port)
+    Socket.tcp(ip, port, connect_timeout: 1) { true }
+  rescue Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::ETIMEDOUT
+    false
+  end
+end
+
+run_stress_test = RunStressTest.new(ARGV)
+
+trap("SIGINT") { throw :ctrl_c }
+
+catch :ctrl_c do
+  run_stress_test.run
+rescue SignalException => e
+  p [:signal_exception, e]
+  run_stress_test.quit
+end
+
+run_stress_test.quit

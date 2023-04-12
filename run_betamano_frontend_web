@@ -1,0 +1,4 @@
+#!/usr/bin/env ruby
+
+Dir.chdir "p2p-frontend"
+exec "NODE_ENV=test PORT=3000 SECRET_KEY_BASE=dev yarn watch"

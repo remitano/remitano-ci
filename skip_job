@@ -1,0 +1,122 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+if ENV["CIRCLECI_SKIP_JOB_DISABLED"]
+  puts "Skipping job script is disabled. Running all tests"
+  exit 1
+end
+
+job = ARGV[0]
+HEAD = ENV["CIRCLE_BRANCH"]
+
+unless %w[cucumber backend ios frontend performance legacy codepush].include?(job)
+  puts "Param must be one of cucumber backend ios frontend performance legacy"
+  exit 1
+end
+
+if HEAD == "master" && !%w[legacy codepush].include?(job)
+  puts "Cannot skip jobs on master branch"
+  exit 1
+end
+
+if HEAD.include? "revert-"
+  puts "PR Revert branch. Skipping all tests!"
+  exit 0
+end
+
+`git fetch origin master`
+BASE_COMMIT = `git merge-base #{HEAD} origin/master`.gsub("\n", "").freeze
+diff_files = `git diff --name-only #{BASE_COMMIT} #{HEAD}`.split("\n")
+
+puts "HEAD: #{`git rev-parse HEAD`}"
+puts "origin/HEAD: #{`git rev-parse origin/HEAD`}"
+puts "origin/master: #{`git rev-parse origin/master`}"
+puts "BASE_COMMIT: #{BASE_COMMIT}"
+puts "diff_files: #{diff_files}"
+
+COMMON_IGNORE_PATTERNS = [
+  /README.md/
+].freeze
+
+BACKEND_IGNORE_PATTERNS = [
+  %r{^p2p-frontend/},
+  %r{^mobile/},
+  %r{^features/}
+].freeze
+
+CUCUMBER_IGNORE_PATTERNS = [
+  %r{^spec/},
+  %r{^mobile/}
+].freeze
+
+IOS_IGNORE_PATTERNS = [
+  %r{^app/},
+  %r{^p2p-balancer/},
+  %r{^p2p-frontend/app/assets/stylesheets/},
+  %r{^p2p-frontend/app/assets/react-app/components/merchant/},
+  %r{^p2p-frontend/app/assets/react-app/components/mission/},
+  %r{^p2p-frontend/app/assets/react-app/components/mlm/},
+  %r{^config/},
+  %r{^db/},
+  %r{^lib/},
+  %r{^spec/},
+  %r{^script/},
+  %r{^fixtures/},
+  %r{^features/merchant/},
+  %r{^features/mlm/},
+  %r{^features/mission/},
+  %r{^bin/},
+  /config.yml/,
+  /Gemfile/,
+  /Gemfile.lock/,
+  %r{^mobile/legacy-e2e/},
+  %r{^mobile/legacy-mock-server/},
+  %r{^mobile/legacy-src/},
+  %r{^mobile/specs/}
+].freeze
+
+CODEPUSH_IGNORE_PATTERNS = IOS_IGNORE_PATTERNS
+
+PERFORMANCE_IGNORE_PATTERNS = [
+  %r{^app/},
+  %r{^config/},
+  %r{^db/},
+  %r{^spec/},
+  %r{^fixtures/},
+  %r{^features/},
+  %r{^bin/},
+  /config.yml/,
+  /Gemfile/,
+  /Gemfile.lock/
+].freeze
+
+FRONTEND_IGNORE_PATTERNS = [
+  %r{^(?!p2p-frontend/)} # ignore all files except p2p-frontend folder
+].freeze
+
+LEGACY_IGNORE_PATTERNS = IOS_IGNORE_PATTERNS + [
+  %r{^p2p-frontend/},
+  %r{^features/},
+  %r{^mobile/e2e/},
+  %r{^mobile/mock-server/},
+  %r{^mobile/src/}
+].freeze
+
+def diff_files.ignore?(patterns)
+  patterns |= COMMON_IGNORE_PATTERNS
+  must_run_files = reject do |file|
+    patterns.any? { |pattern| file.match?(pattern) }
+  end
+
+  must_run_files.empty?
+end
+
+skip_jobs = diff_files.ignore?(Object.const_get("#{job.upcase}_IGNORE_PATTERNS"))
+
+if skip_jobs
+  puts "You can skip #{job} tests"
+  exit 0
+else
+  puts "Job for #{job} is not skipped"
+  exit 1
+end

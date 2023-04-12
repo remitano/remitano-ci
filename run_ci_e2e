@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+
+ENV["RAILS_ENV"] = "test"
+ENV["WEB_CONCURRENCY"] = "1"
+ENV["MOBILE_E2E_RAILS_SOCKET_CLIENT"] = "1"
+ENV["ADMIN_WEB"] = "1"
+ENV["SIDEKIQ_INLINE"] = "1"
+exec "bundle exec rails s -b 0.0.0.0 -p 3100 -e test"

@@ -1,0 +1,4 @@
+#!/usr/bin/env ruby
+
+Dir.chdir "mobile"
+exec "yarn start"
