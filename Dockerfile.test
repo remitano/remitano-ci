@@ -1,0 +1,75 @@
+FROM ruby:2.7.3-alpine3.12
+
+RUN apk add --update --no-cache \
+	build-base \
+	tzdata \
+	git \
+	openssh \
+	postgresql-client \
+	postgresql-dev \
+	imagemagick \
+	nodejs \
+	yarn \
+	ffmpeg \
+	file \
+	zip \
+	libcurl \
+	curl \
+	curl-dev \
+	snappy-dev \
+	bash \
+	tar \
+	linux-headers
+
+# Install ruby 2.7.6
+RUN curl "https://cache.ruby-lang.org/pub/ruby/2.7/ruby-2.7.6.tar.gz" | tar -xz && cd ruby-2.7.6 && \
+  ./configure --prefix=/usr/local/ruby/2_7_6 && make && make install
+ENV PATH /usr/local/ruby/2_7_6/bin:$PATH
+
+ENV BUNDLER_VERSION='2.1.4'
+RUN gem install bundler --no-document -v '2.1.4'
+
+# needed for backend_cucumber on CI
+RUN apk add --no-cache haproxy \
+	lsof
+
+# For Percy, there are pupperteer dependency issues on alpine linux.
+# In order to make it work, we need to manually configure which chromium version with puppeteer Percy will use.
+# The newest Chromium package supported on Alpine is 89, which corresponds to Puppeteer v6.0.0.
+# https://github.com/puppeteer/puppeteer/blob/main/docs/troubleshooting.md#running-on-alpine
+# Installs latest Chromium (89) package
+RUN apk add --no-cache chromium
+# Tell Puppeteer to skip installing Chrome. We'll be using the installed package.
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+RUN yarn add puppeteer@6.0.0
+
+# needed for dockerize -wait command on CI
+RUN apk add --no-cache openssl
+
+ENV DOCKERIZE_VERSION v0.6.1
+RUN wget https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSION/dockerize-alpine-linux-amd64-$DOCKERIZE_VERSION.tar.gz \
+    && tar -C /usr/local/bin -xzvf dockerize-alpine-linux-amd64-$DOCKERIZE_VERSION.tar.gz \
+    && rm dockerize-alpine-linux-amd64-$DOCKERIZE_VERSION.tar.gz
+
+# needed for backend_stress_test on CI
+RUN apk add --no-cache openjdk8-jre
+
+# needed for grpc gem
+RUN apk update && apk add --no-cache libc6-compat
+RUN ln -s /lib/libc.musl-x86_64.so.1 /lib/ld-linux-x86-64.so.2
+
+ARG JMETER_VERSION="5.1.1"
+ENV JMETER_HOME /opt/apache-jmeter-${JMETER_VERSION}
+ENV	JMETER_BIN	${JMETER_HOME}/bin
+ENV	JMETER_DOWNLOAD_URL  https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-${JMETER_VERSION}.tgz
+RUN	mkdir -p /tmp/dependencies  \
+	&& curl -L --silent ${JMETER_DOWNLOAD_URL} >  /tmp/dependencies/apache-jmeter-${JMETER_VERSION}.tgz  \
+	&& mkdir -p /opt  \
+	&& tar -xzf /tmp/dependencies/apache-jmeter-${JMETER_VERSION}.tgz -C /opt  \
+	&& rm -rf /tmp/dependencies
+
+ENV PATH $PATH:$JMETER_BIN
+
+WORKDIR /app
